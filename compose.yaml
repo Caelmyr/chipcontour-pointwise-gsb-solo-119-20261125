@@ -1,0 +1,16 @@
+name: solo122-chipcontour
+services:
+  desk:
+    build:
+      context: .
+      args:
+        CHIPCONTOUR_DEPS_IMAGE: ${CHIPCONTOUR_DEPS_IMAGE:-python:3.11-slim}
+    image: ${CHIPCONTOUR_IMAGE:-solo122-chipcontour:1.0}
+    network_mode: bridge
+    ports:
+      - "127.0.0.1:${CHIPCONTOUR_PORT:-19922}:8000"
+    volumes:
+      - measurements:/var/lib/chipcontour
+    init: true
+volumes:
+  measurements:
