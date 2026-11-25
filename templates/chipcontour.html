@@ -85,6 +85,23 @@
         </div></fieldset>
         <button id="save" class="primary" type="submit">保存并测量</button>
       </form>
+      <section class="panel pairing">
+        <div class="panel-head"><div><h2>断片对合</h2><span>第二张原行相对第一张只做整体上下移，按相邻原行断边 X 的改变量比较</span></div></div>
+        <form id="match-form" class="settings">
+          <label class="wide">第二张断片卡<select id="match-second" required></select></label>
+          <fieldset><legend>对位限制 · 原片 px</legend><div class="form-grid">
+            <label>上下位移上限<input id="match-shift" type="number" min="0" max="2000" step="1" value="60" required></label>
+            <label>改变量允许差<input id="match-tolerance" type="number" min="0" max="100" step="any" value="1" required></label>
+          </div></fieldset>
+          <button class="primary" type="submit">查找对合段</button>
+        </form>
+        <div id="match-results"></div>
+        <div id="match-adopted" hidden>
+          <p id="match-summary"></p>
+          <p>在「断边走势」图上点一张卡的一行，即切到另一张卡的对应原行，直接点读那边真实断边像素。</p>
+          <button id="match-clear" type="button">取消对合</button>
+        </div>
+      </section>
       <section class="panel outputs">
         <div class="panel-head"><h2>断片交接</h2></div>
         <div><a id="proof" download>PNG 校样 ↓</a><a id="csv" download>CSV 读数 ↓</a><a id="zip" download>ZIP 断片卡 ↓</a></div>

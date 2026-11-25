@@ -7,9 +7,9 @@ from pathlib import Path
 from flask import Blueprint, jsonify, render_template, request, send_file, url_for
 
 from image_lab import create_app as preparation_app
-from image_lab.validation import Invalid, integer, object_value
+from image_lab.validation import Invalid, identifier, integer, number, object_value
 
-from . import exports, contour
+from . import exports, contour, pairing
 from .store import Cards
 
 
@@ -53,6 +53,19 @@ def create_app(directory=None):
     def card(key):
         return jsonify(cards.update(key, object_value(request.get_json(silent=True), "断片卡设置"))
                        if request.method == "PATCH" else cards.read(key))
+
+    @api.post("/pairing")
+    def pair_cards():
+        body = object_value(request.get_json(silent=True), "对合请求")
+        first = cards.read(identifier(body.get("first")))
+        second = cards.read(identifier(body.get("second")))
+        if first["id"] == second["id"]:
+            raise Invalid("请选择两张不同的断片卡")
+        max_shift = integer(body.get("max_shift"), "上下位移上限", 0, 2000)
+        tolerance = number(body.get("tolerance"), "改变量允许差", 0, 100)
+        first_outline = contour.source_outline(contour.pixels(cards.photo(first["id"])), first["settings"])
+        second_outline = contour.source_outline(contour.pixels(cards.photo(second["id"])), second["settings"])
+        return jsonify(candidates=pairing.align(first_outline, second_outline, max_shift, tolerance))
 
     @api.get("/cards/<key>/capture.png")
     def capture(key):

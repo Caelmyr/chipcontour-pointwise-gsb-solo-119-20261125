@@ -1,7 +1,8 @@
 "use strict";
 
 const get = (id) => document.getElementById(id);
-const state = {card: null, result: null, photo: null, probe: null, mode: "probe", chart: "profile", busy: false};
+const state = {card: null, result: null, photo: null, probe: null, mode: "probe", chart: "profile", busy: false,
+  cards: [], candidates: [], matchQuery: null, match: null};
 const settings = [...document.querySelectorAll("[data-setting]")];
 
 async function api(path, options) {
@@ -42,10 +43,60 @@ async function action(work, target = "notice") {
 
 async function library() {
   const {cards} = await api("/cards");
+  state.cards = cards;
   const select = get("library");
   select.replaceChildren(new Option("选取已存卡片", ""));
   for (const card of cards) select.append(new Option(card.name, card.id));
   select.value = state.card?.id || "";
+  matchOptions();
+}
+
+function matchOptions() {
+  const select = get("match-second");
+  const keep = select.value;
+  select.replaceChildren();
+  const others = state.cards.filter((card) => card.id !== state.card?.id);
+  if (!others.length) {
+    select.append(new Option("先准备另一张断片卡", ""));
+    return;
+  }
+  for (const card of others) select.append(new Option(card.name, card.id));
+  if (others.some((card) => card.id === keep)) select.value = keep;
+}
+
+const cardName = (id) => state.cards.find((card) => card.id === id)?.name || "另一张";
+
+function candidateText(c) {
+  const shift = (c.shift > 0 ? "+" : "") + c.shift;
+  return `位移 ${shift} · 连续 ${c.rows} 行 · 第一张 Y ${c.y1_first}–${c.y1_last} · ` +
+    `第二张 Y ${c.y2_first}–${c.y2_last} · 平均差 ${c.mean_diff.toFixed(2)} px · 最大差 ${c.max_diff} px`;
+}
+
+function renderMatch() {
+  const box = get("match-results");
+  box.replaceChildren();
+  state.candidates.forEach((candidate, index) => {
+    const row = document.createElement("div");
+    row.className = "candidate" + (index === 0 ? " recommended" : "");
+    const text = document.createElement("span");
+    text.textContent = (index === 0 ? "推荐 · " : "") + candidateText(candidate);
+    const use = document.createElement("button");
+    use.type = "button";
+    use.textContent = "采用";
+    use.addEventListener("click", () => {
+      state.match = {...state.matchQuery, candidate};
+      renderMatch();
+      paintChart();
+      notice("已采用该对位。打开「断边走势」图，点一行即切到另一张卡的对应原行。");
+    });
+    row.append(text, use);
+    box.append(row);
+  });
+  get("match-adopted").hidden = !state.match;
+  if (state.match) {
+    get("match-summary").textContent =
+      `已采用：${cardName(state.match.first)} ↔ ${cardName(state.match.second)} · ${candidateText(state.match.candidate)}`;
+  }
 }
 
 function paintSource() {
@@ -116,6 +167,17 @@ function paintChart() {
   }
   ctx.fillText(String(lo), xAt(lo), height - 7);
   ctx.fillText(String(hi), xAt(hi) - 15, height - 7);
+  const linkable = outline && state.match &&
+    (card.id === state.match.first || card.id === state.match.second);
+  canvas.classList.toggle("linkable", Boolean(linkable));
+  if (linkable) {
+    const onFirst = card.id === state.match.first;
+    const c = state.match.candidate;
+    const a = onFirst ? c.y1_first : c.y2_first;
+    const b = onFirst ? c.y1_last : c.y2_last;
+    ctx.fillStyle = "rgba(120, 173, 161, 0.18)";
+    ctx.fillRect(xAt(a), 20, Math.max(2, xAt(b) - xAt(a)), height - 46);
+  }
   ctx.lineWidth = 2;
   ctx.strokeStyle = "#426e60";
   ctx.beginPath();
@@ -130,6 +192,15 @@ function paintChart() {
     prior = true;
   }
   ctx.stroke();
+  if (outline && result.focus >= cfg.top && result.focus <= cfg.bottom) {
+    ctx.strokeStyle = "#b04c72";
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(xAt(result.focus), 20);
+    ctx.lineTo(xAt(result.focus), height - 26);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
   if (!outline) {
     ctx.strokeStyle = "#a4675b";
     ctx.setLineDash([5, 4]);
@@ -171,6 +242,8 @@ function show() {
   for (const [id, filename] of Object.entries({proof: "proof.png", csv: "profile.csv", zip: "observation.zip"})) {
     get(id).href = "/chipcontour" + route("/export/" + filename) + savedQuery();
   }
+  matchOptions();
+  renderMatch();
   paintSource();
   paintChart();
 }
@@ -251,6 +324,71 @@ get("calibration").addEventListener("submit", (event) => {
     });
     await open(card);
     await library();
+  });
+});
+get("match-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (!state.card) return;
+  action(async () => {
+    const body = {
+      first: state.card.id,
+      second: get("match-second").value,
+      max_shift: Number(get("match-shift").value),
+      tolerance: Number(get("match-tolerance").value),
+    };
+    if (!body.second) throw new Error("请选择第二张断片卡。");
+    const {candidates} = await api("/pairing", {
+      method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body),
+    });
+    state.matchQuery = {first: body.first, second: body.second};
+    state.candidates = candidates;
+    state.match = null;
+    renderMatch();
+    paintChart();
+    notice(candidates.length
+      ? `找到 ${candidates.length} 种对位，已按有证连续行更多、改变量对得更准排序。`
+      : "没有满足条件的对合段：两照同段都要至少六个连续有证原行，且改变量差不超限。");
+  });
+});
+get("match-clear").addEventListener("click", () => {
+  state.match = null;
+  renderMatch();
+  paintChart();
+  notice("已取消对合。");
+});
+get("chart").addEventListener("click", (event) => {
+  if (state.chart !== "coverage" || !state.match || !state.card || !state.result) return;
+  const {first, second, candidate} = state.match;
+  if (state.card.id !== first && state.card.id !== second) return;
+  const canvas = event.currentTarget;
+  const rect = canvas.getBoundingClientRect();
+  const px = (event.clientX - rect.left) * canvas.width / rect.width;
+  const cfg = state.card.settings;
+  const fraction = Math.max(0, Math.min(1, (px - 43) / (canvas.width - 79)));
+  const y = Math.round(cfg.top + fraction * Math.max(1, cfg.bottom - cfg.top));
+  const forward = state.card.id === first;
+  const targetId = forward ? second : first;
+  const targetY = forward ? y + candidate.shift : y - candidate.shift;
+  action(async () => {
+    const target = await api("/cards/" + targetId);
+    if (targetY < 0 || targetY > target.height - 1) {
+      notice("对应原行超出另一张原照范围。");
+      return;
+    }
+    const updated = await api("/cards/" + targetId, {
+      method: "PATCH", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({revision: target.revision, settings: {focus: targetY}}),
+    });
+    await open(updated);
+    const hit = state.result.outline.find((row) => row.y === targetY);
+    if (!hit) {
+      notice(`已切到「${updated.name}」原行 ${targetY}，该原行在对方测量框外。`);
+    } else if (hit.x === null) {
+      notice(`已切到「${updated.name}」原行 ${targetY}，该行读不出实际断边。`);
+    } else {
+      await probe(hit.x, targetY);
+      notice(`已切到「${updated.name}」原行 ${targetY}，点读真实断边像素。`);
+    }
   });
 });
 get("prepare").addEventListener("click", () => action(async () => {
