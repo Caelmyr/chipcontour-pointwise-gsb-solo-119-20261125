@@ -101,7 +101,7 @@ function paintChart() {
   const xAt = (x) => 43 + (width - 79) * (x - lo) / Math.max(1, hi - lo);
   const yAt = (y) => height - 26 - (height - 46) * y / bound;
   get("chart-title").textContent = outline ? "原图断边到框的距离" : "原行实测亮度";
-  get("chart-caption").textContent = outline ? "有证距离 · 原片 Y" : "真实亮度 · 原片 X";
+  get("chart-caption").textContent = outline ? "有证距离 · 原片 Y" : "真实亮度 · 原片 X · 紫点属采用片身";
   ctx.fillStyle = "#f7f8f1";
   ctx.fillRect(0, 0, width, height);
   ctx.font = "12px monospace";
@@ -138,6 +138,14 @@ function paintChart() {
     ctx.lineTo(xAt(hi), yAt(cfg.cutoff));
     ctx.stroke();
     ctx.setLineDash([]);
+    ctx.fillStyle = "#b04c72";
+    for (const point of result.profile) {
+      if (point.in_body) {
+        ctx.beginPath();
+        ctx.arc(xAt(point.x), yAt(point.brightness), 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
 }
 
@@ -168,6 +176,11 @@ function show() {
   get("selected-level").textContent = reading
     ? reading.offset_px + " px · 断边 X " + reading.x
     : (result.profile.length ? "该行无连续四点的边证" : "截线在测量框外");
+  const body = result.body;
+  get("body-state").textContent = body
+    ? "采用片身 " + body.area + " px · 原行 " + body.rows[0] + "–" + body.rows[1] +
+      " · 候选 " + body.candidates.length + " 片"
+    : "未采用到片身：需至少连续八行触到进入方向对侧的框边";
   for (const [id, filename] of Object.entries({proof: "proof.png", csv: "profile.csv", zip: "observation.zip"})) {
     get(id).href = "/chipcontour" + route("/export/" + filename) + savedQuery();
   }
